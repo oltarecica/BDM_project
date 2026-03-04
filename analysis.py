@@ -35,8 +35,8 @@ else:
 
 # ── 1. Derived variables ─────────────────────────────────────────────────────
 
-# Accuracy: 1 if |response - true_value| ≤ 10, else 0
-df["accuracy"] = (np.abs(df["response"] - df["true_value"]) <= 10).astype(int)
+# Accuracy: 1 if |response - true_value| ≤ 5, else 0
+df["accuracy"] = (np.abs(df["response"] - df["true_value"]) <= 5).astype(int)
 
 # Calibration gap (confidence already on 0–100 scale)
 # CalibrationGap = Confidence - (100 × Accuracy)
@@ -134,7 +134,7 @@ axes[0].bar(
 )
 axes[0].set_ylim(0, 1)
 axes[0].set_title("Mean Accuracy")
-axes[0].set_ylabel("Proportion correct (±10 pp)")
+axes[0].set_ylabel("Proportion correct (±5 pp)")
 for i, (k, v) in enumerate(means_acc.items()):
     axes[0].text(i, v + 0.02, f"{v:.2f}", ha="center", fontsize=10)
 

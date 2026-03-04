@@ -2,9 +2,6 @@
 Time Pressure, Accuracy, and Confidence Calibration
 Pre-registered Analysis Script
 -----------------------------------------------------
-Key deviation from pre-registration:
-  - Confidence is measured on a 1–100 scale (not 1–10),
-    so no ×10 rescaling is needed in the calibration gap formula.
 
 Expected CSV columns (one row per participant × question):
   participant_id   : unique participant identifier
@@ -31,10 +28,10 @@ DATA_PATH = "data.csv"
 df = pd.read_csv(DATA_PATH)
 
 # Normalise condition column to 0/1
-if df["condition"].dtype == object:
-    df["time_pressure"] = (df["condition"].str.lower() == "treatment").astype(int)
-else:
+if pd.api.types.is_numeric_dtype(df["condition"]):
     df["time_pressure"] = df["condition"].astype(int)
+else:
+    df["time_pressure"] = (df["condition"].astype(str).str.lower() == "treatment").astype(int)
 
 # ── 1. Derived variables ─────────────────────────────────────────────────────
 

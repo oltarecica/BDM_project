@@ -39,8 +39,55 @@ ACCURACY_THRESHOLD = 5   # ±5 percentage points
 
 # ── 1. Load data ─────────────────────────────────────────────────────────────
 
-DATA_PATH = "data.csv"   # ← update to your actual file path
-df = pd.read_csv(DATA_PATH)
+DATA_PATH = "data1.csv"   # ← update to your actual file path
+_raw = pd.read_csv(DATA_PATH, skiprows=[1, 2])  # skip Qualtrics description + ImportId rows
+
+def _reshape_qualtrics(raw):
+    """Convert wide Qualtrics export to long format expected by analysis."""
+    # Column mapping: (question_id, condition) → (response_col, confidence_col)
+    col_map = {
+        (1, 1): ("Q1_15_1",   "Q2_C_15_1"),      # Q1 15s: conf col misnamed in survey
+        (2, 1): ("Q2_15_1",   "Q2_C_15_1.1"),    # Q2 15s
+        (3, 1): ("Q3_15_1",   "Q3_C_15_1"),
+        (4, 1): ("Q4_15_1",   "Q4_C_15_1"),
+        (5, 1): ("Q5-15_1",   "Q5_C_15_1"),
+        (1, 0): ("Q1_50_1",   "Q1_C_50_1"),
+        (2, 0): ("Q2_50_1",   "Q2_C_50_1"),
+        (3, 0): ("Q3_50_1",   "Q3_C_50_1"),
+        (4, 0): ("Q4_50_1",   "Q4_C_50_1"),
+        (5, 0): ("Q5_50_1",   "Q5_C_50_1"),
+    }
+    rows = []
+    for _, p in raw.iterrows():
+        pid = p["ResponseId"]
+        in_15 = pd.notna(p.get("Q1_15_1"))
+        in_50 = pd.notna(p.get("Q1_50_1"))
+        # Prefer 15s if both non-null (edge case); skip if neither
+        if in_15:
+            cond = 1
+        elif in_50:
+            cond = 0
+        else:
+            continue
+        for qid in range(1, 6):
+            r_col, c_col = col_map[(qid, cond)]
+            resp = p.get(r_col)
+            conf = p.get(c_col)
+            if pd.isna(resp):
+                continue
+            rows.append({
+                "participant_id": pid,
+                "condition":      cond,
+                "question_id":    qid,
+                "response":       float(resp),
+                "confidence":     float(conf) if pd.notna(conf) else np.nan,
+            })
+    return pd.DataFrame(rows)
+
+if "condition" in _raw.columns:
+    df = _raw.copy()
+else:
+    df = _reshape_qualtrics(_raw)
 
 # Normalise condition column to 0 / 1
 if df["condition"].dtype == object:
@@ -130,12 +177,13 @@ print(f"Predicted direction (α1 < 0) confirmed: {alpha1 < 0}")
 # ── 6. H2 – Time pressure increases overconfidence ───────────────────────────
 # OLS: calibration_gap_ij = δ0 + δ1·TimePressure_i + γ_j + η_ij
 
+df_h2 = df.dropna(subset=["calibration_gap"]).copy()
 model_h2 = smf.ols(
     "calibration_gap ~ time_pressure + C(question_id)",
-    data=df
+    data=df_h2
 ).fit(
     cov_type="cluster",
-    cov_kwds={"groups": df["participant_id"]}
+    cov_kwds={"groups": df_h2["participant_id"]}
 )
 
 delta1 = model_h2.params["time_pressure"]
@@ -160,9 +208,11 @@ trt  = pid_means[pid_means["time_pressure"] == 1]
 
 print("\n── Supplementary Welch t-tests (participant-level means) ──")
 for var in ["accuracy", "confidence", "calibration_gap"]:
-    t, p = stats.ttest_ind(ctrl[var], trt[var], equal_var=False)
-    pooled_sd = np.sqrt((ctrl[var].std()**2 + trt[var].std()**2) / 2)
-    d = (trt[var].mean() - ctrl[var].mean()) / pooled_sd if pooled_sd > 0 else np.nan
+    c_vals = ctrl[var].dropna()
+    t_vals = trt[var].dropna()
+    t, p = stats.ttest_ind(c_vals, t_vals, equal_var=False)
+    pooled_sd = np.sqrt((c_vals.std()**2 + t_vals.std()**2) / 2)
+    d = (t_vals.mean() - c_vals.mean()) / pooled_sd if pooled_sd > 0 else np.nan
     print(f"  {var:20s}: t = {t:+.3f},  p = {p:.4f},  Cohen's d = {d:+.3f}")
 
 # ── 8. Plots ─────────────────────────────────────────────────────────────────
